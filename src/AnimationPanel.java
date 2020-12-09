@@ -14,10 +14,10 @@ public class AnimationPanel extends JPanel {
 
     private World world;
 
-    private float PARKING_LOT_WIDTH = 1 / 8F;
-    private float ROAD_WIDTH = 1 / 6F;
-    private float GATES_WIDTH = 1 / 8F;
-    private float BRIDGE_WIDTH = 1 / 6F;
+    private static final float PARKING_LOT_WIDTH = 1 / 8F;
+    private static final float ROAD_WIDTH = 1 / 6F;
+    private static final float GATES_WIDTH = 1 / 8F;
+    private static final float BRIDGE_WIDTH = 1 / 6F;
 
     public AnimationPanel(World world) {
         this.world = world;

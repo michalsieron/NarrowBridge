@@ -8,7 +8,9 @@ public class Bus {
     private long travelTime = 0;
     private Object travelTimeLock = new Object();
     private boolean goingRight;
+    private Object goingRightLock = new Object();
     private long id = currentId++;
+    private Object idLock = new Object();
 
     public enum Location {
         LEFT_PARKING_LOT, LEFT_ROAD, LEFT_GATES, WAITING_ON_LEFT_GATES, BRIDGE, WAITING_ON_RIGHT_GATES, RIGHT_GATES,
@@ -26,7 +28,9 @@ public class Bus {
     }
 
     public long getId() {
-        return id;
+        synchronized (idLock) {
+            return id;
+        }
     }
 
     public Location getLocation() {
@@ -45,17 +49,19 @@ public class Bus {
     }
 
     public boolean isGoingRight() {
-        return goingRight;
+        synchronized (goingRightLock) {
+            return goingRight;
+        }
     }
 
     public long checkTime(long time) {
         synchronized (travelTimeLock) {
             synchronized (lastTimeCheckLock) {
                 travelTime += time - lastTimeCheck;
+                lastTimeCheck = time;
             }
+            return travelTime;
         }
-        lastTimeCheck = time;
-        return travelTime;
     }
 
     public long getTravelTime() {
