@@ -8,35 +8,43 @@ import java.awt.geom.Rectangle2D;
 
 import javax.swing.JPanel;
 
+/*
+ *     Program: NarrowBridgeSimulation
+ *        Plik: AnimationPanel.java
+ *       Autor: Michał Sieroń
+ *        Data: 2020 December
+ */
+
 public class AnimationPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
 
-    private World world;
+    private App app;
+
+    private boolean running = true;
 
     private static final float PARKING_LOT_WIDTH = 1 / 8F;
     private static final float ROAD_WIDTH = 1 / 6F;
     private static final float GATES_WIDTH = 1 / 8F;
     private static final float BRIDGE_WIDTH = 1 / 6F;
 
-    public AnimationPanel(World world) {
-        this.world = world;
-        startRepainterSystem();
+    public AnimationPanel(App app) {
+        this.app = app;
+        startRepainter();
     }
 
-    private void startRepainterSystem() {
+    public boolean setRunning(boolean r) {
+        return running = r;
+    }
+
+    private void startRepainter() {
         (new Thread(() -> {
-            while (world.isRunning()) {
-                long start = System.currentTimeMillis();
+            while (running) {
                 repaint();
-                long end = System.currentTimeMillis();
-                long sleepTime = 20 - (end - start);
-                if (sleepTime > 0) {
-                    try {
-                        Thread.sleep(sleepTime);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
         })).start();
@@ -118,101 +126,62 @@ public class AnimationPanel extends JPanel {
     }
 
     private void drawBuses(Graphics g) {
-        Bus[] buses = world.getBuses();
         int x = 0, y = 0, i = 0;
+        Bus[] buses = app.getBuses();
+        int t = app.getBusesSize() + 1;
         for (Bus b : buses) {
-            x = 0;
-            if (b.isGoingRight()) {
-                switch (b.getLocation()) {
-                    case LEFT_PARKING_LOT: {
-                        x = (int) ((getWidth() * PARKING_LOT_WIDTH) / 2.0);
-                        break;
-                    }
-                    case LEFT_ROAD: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH / 2.0 + ROAD_WIDTH * b.getTravelTime() / 500.0));
-                        break;
-                    }
-                    case LEFT_GATES: {
-                        x = (int) (getWidth()
-                                * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH * b.getTravelTime() / 500.0));
-                        break;
-                    }
-                    case WAITING_ON_LEFT_GATES: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH));
-                        break;
-                    }
-                    case BRIDGE: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH
-                                + BRIDGE_WIDTH * b.getTravelTime() / 3000.0));
-                        break;
-                    }
-                    case RIGHT_GATES: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH
-                                + GATES_WIDTH * b.getTravelTime() / 500.0));
-                        break;
-                    }
-                    case RIGHT_ROAD: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + GATES_WIDTH + ROAD_WIDTH + BRIDGE_WIDTH
-                                + GATES_WIDTH + (ROAD_WIDTH + PARKING_LOT_WIDTH / 2.0) * b.getTravelTime() / 500.0));
-                        break;
-                    }
-                    case RIGHT_PARKING_LOT: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH
-                                + GATES_WIDTH + ROAD_WIDTH + PARKING_LOT_WIDTH / 2.0));
-                        break;
-                    }
-                    default:
-                        break;
-                }
-            } else {
-                switch (b.getLocation()) {
-                    case RIGHT_PARKING_LOT: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH
-                                + GATES_WIDTH + ROAD_WIDTH + PARKING_LOT_WIDTH / 2.0));
-                        break;
-                    }
-                    case RIGHT_ROAD: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + GATES_WIDTH + ROAD_WIDTH + BRIDGE_WIDTH
-                                + GATES_WIDTH + ROAD_WIDTH * (1 - b.getTravelTime() / 500.0)));
-                        break;
-                    }
-                    case RIGHT_GATES: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH
-                                + GATES_WIDTH * (1 - b.getTravelTime() / 500.0)));
-                        break;
-                    }
-                    case WAITING_ON_RIGHT_GATES: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH));
-                        break;
-                    }
-                    case BRIDGE: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH
-                                + BRIDGE_WIDTH * (1 - b.getTravelTime() / 3000.0)));
-                        break;
-                    }
-                    case LEFT_GATES: {
-                        x = (int) (getWidth()
-                                * (PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH * (1 - b.getTravelTime() / 500.0)));
-                        break;
-                    }
-                    case LEFT_ROAD: {
-                        x = (int) (getWidth() * (PARKING_LOT_WIDTH + ROAD_WIDTH
-                                - (PARKING_LOT_WIDTH / 2.0 + ROAD_WIDTH) * b.getTravelTime() / 500.0));
-                        break;
-                    }
-                    case LEFT_PARKING_LOT: {
-                        x = (int) ((getWidth() * PARKING_LOT_WIDTH / 2.0));
-                        break;
-                    }
-                    default:
-                        break;
-                }
-            }
-            // dy = getHeight() - 2 * BUS_SIZE >= buses.length * BUS_SIZE ? BUS_SIZE
-            //         : (getHeight() - 2 * BUS_SIZE) / buses.length;
-            y = getHeight() / (buses.length + 1) * ++i;
+            x = computeBusX(b);
+            y = getHeight() / (t) * ++i;
             drawBus(g, x, y, b);
         }
+    }
+
+    private int computeBusX(Bus b) {
+        float rtn = 0;
+        float pos_start;
+        float pos_stop;
+        long currTime = System.currentTimeMillis();
+        switch(b.getState()) {
+            case BOARDING: {
+                rtn = PARKING_LOT_WIDTH / 2;
+                break;
+            }
+            case GOING_TO_BRIDGE: {
+                pos_start = PARKING_LOT_WIDTH / 2;
+                pos_stop = PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH;
+                rtn =  (pos_start + (pos_stop - pos_start) * (currTime - b.getTime()) / 1000);
+                break;
+            }
+            case GETTIING_ON_BRIDGE: {
+                rtn = PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH;
+                break;
+            }
+            case ON_BRIDGE: {
+                pos_start = PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH;
+                pos_stop = PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH;
+                rtn =  (pos_start + (pos_stop - pos_start) * (currTime - b.getTime()) / 3000);
+                break;
+            }
+            case GETTING_OFF_BRIDGE: {
+                rtn = PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH;
+                break;
+            }
+            case GOING_TO_PARKING: {
+                pos_start = PARKING_LOT_WIDTH + ROAD_WIDTH + GATES_WIDTH + BRIDGE_WIDTH;
+                pos_stop = 1.5f * PARKING_LOT_WIDTH + 2 * ROAD_WIDTH + 2 * GATES_WIDTH + BRIDGE_WIDTH;
+                rtn =  (pos_start + (pos_stop - pos_start) * (currTime - b.getTime()) / 1000);
+                break;
+            }
+            case UNLOADING: {
+                rtn = 1.5f * PARKING_LOT_WIDTH + 2 * ROAD_WIDTH + 2 * GATES_WIDTH + BRIDGE_WIDTH;
+                break;
+            }
+            default:
+                rtn = 0;
+        }
+        if (!b.isGoingRight())
+            rtn = 1 - rtn;
+        return (int) (rtn * getWidth());
     }
 
     private void drawBus(Graphics g, int x, int y, Bus b) {
@@ -235,7 +204,7 @@ public class AnimationPanel extends JPanel {
         g2.fillOval(px[7], 7 + y, 10, 10);
         BasicStroke gr = new BasicStroke(3);
         g2.setStroke(gr);
-        if (b.getLocation() != Bus.Location.WAITING_ON_LEFT_GATES && b.getLocation() != Bus.Location.WAITING_ON_RIGHT_GATES) {
+        if (b.getState() != Bus.State.GETTIING_ON_BRIDGE) {
             g2.setColor(color);
         } else {
             g2.setColor(Color.YELLOW);

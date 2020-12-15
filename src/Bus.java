@@ -1,72 +1,133 @@
+import java.util.concurrent.ThreadLocalRandom;
 
-public class Bus {
+/*
+ *     Program: NarrowBridgeSimulation
+ *        Plik: Bus.java
+ *       Autor: Michał Sieroń
+ *        Data: 2020 December
+ */
+
+public class Bus implements Runnable {
 
     static private long currentId = 0;
 
-    private long lastTimeCheck;
-    private Object lastTimeCheckLock = new Object();
-    private long travelTime = 0;
-    private Object travelTimeLock = new Object();
-    private boolean goingRight;
-    private Object goingRightLock = new Object();
-    private long id = currentId++;
-    private Object idLock = new Object();
+    private final long id = currentId++;
 
-    public enum Location {
-        LEFT_PARKING_LOT, LEFT_ROAD, LEFT_GATES, WAITING_ON_LEFT_GATES, BRIDGE, WAITING_ON_RIGHT_GATES, RIGHT_GATES,
-        RIGHT_ROAD, RIGHT_PARKING_LOT;
+    public enum State {
+        BOARDING, GOING_TO_BRIDGE, GETTIING_ON_BRIDGE, ON_BRIDGE, GETTING_OFF_BRIDGE, GOING_TO_PARKING, UNLOADING;
 
-        private Location() {
+        private State() {
         }
     }
 
-    private Location location;
+    private boolean goingRight = true;
+    private State state = State.BOARDING;
+    private App app;
 
-    public Bus(long time, boolean goingRight) {
-        lastTimeCheck = time;
+    private long time;
+
+    public Bus(App app, boolean goingRight) {
         this.goingRight = goingRight;
+        this.app = app;
     }
+
+    public static void sleep(int millis) {
+        try {
+           Thread.sleep((long) millis);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+  
+     }
+  
+     public static void sleep(int min_millis, int max_milis) {
+        sleep(ThreadLocalRandom.current().nextInt(min_millis, max_milis));
+     }
 
     public long getId() {
-        synchronized (idLock) {
-            return id;
-        }
+        return id;
     }
 
-    public Location getLocation() {
-        synchronized (location) {
-            return location;
-        }
+    public long getTime() {
+        return time;
     }
 
-    public void setLocation(Location location) {
-        synchronized (location) {
-            this.location = location;
-            synchronized (travelTimeLock) {
-                travelTime = 0;
-            }
-        }
+    public State getState() {
+            return state;
+    }
+    
+    public void setState(State s) {
+        state = s;
+    }
+    
+    public void setTime(long t) {
+        time = t;
     }
 
     public boolean isGoingRight() {
-        synchronized (goingRightLock) {
-            return goingRight;
-        }
+        return goingRight;
     }
 
-    public long checkTime(long time) {
-        synchronized (travelTimeLock) {
-            synchronized (lastTimeCheckLock) {
-                travelTime += time - lastTimeCheck;
-                lastTimeCheck = time;
-            }
-            return travelTime;
-        }
+    private void boarding() {
+        time = System.currentTimeMillis();
+        state = State.BOARDING;
+
+        app.log(this + " is boarding");
+
+        sleep(1000, 10000);
     }
 
-    public long getTravelTime() {
-        synchronized (travelTimeLock) {
-            return travelTime;
-        }
+    private void goToTheBridge() {
+        time = System.currentTimeMillis();
+        state = State.GOING_TO_BRIDGE;
+
+        app.log(this + " is going to the bridge");
+
+        sleep(1000);
+    }
+
+    private void rideTheBridge() {
+        time = System.currentTimeMillis();
+        state = State.ON_BRIDGE;
+
+        app.log(this + " is on the bridge");
+
+        sleep(3000);
+    }
+
+    private void goToTheParking() {
+        time = System.currentTimeMillis();
+        state = State.GOING_TO_PARKING;
+
+        app.log(this + " is going to parking lot");
+
+        sleep(1000);
+    }
+
+    private void unloading() {
+        time = System.currentTimeMillis();
+        state = State.UNLOADING;
+
+        app.log(this + " is unloading");
+
+        sleep(1000);
+    }
+
+    @Override
+    public void run() {
+        app.addBus(this);
+        boarding();
+        goToTheBridge();
+        app.getOnTheBridge(this);
+        rideTheBridge();
+        app.getOffTheBridge(this);
+        goToTheParking();
+        unloading();
+        app.removeBus(this);
+    }
+
+    @Override
+    public String toString() {
+        return "Bus[id=" + id + ",goingRight=" + goingRight + "]";
     }
 }

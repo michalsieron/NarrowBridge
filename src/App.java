@@ -3,9 +3,9 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
-import java.awt.event.WindowEvent;
-import java.awt.event.WindowAdapter;
+import java.util.ArrayList;
 import java.util.Hashtable;
+import java.util.concurrent.ThreadLocalRandom;
 import java.awt.GridBagConstraints;
 
 import javax.swing.BorderFactory;
@@ -20,7 +20,16 @@ import javax.swing.JPanel;
 import javax.swing.JSlider;
 import javax.swing.JTextField;
 
+/*
+ *     Program: NarrowBridgeSimulation
+ *        Plik: App.java
+ *       Autor: Michał Sieroń
+ *        Data: 2020 December
+ */
+
 public class App {
+
+    private static final long MAX_BUSES = 100;
 
     private JFrame mainFrame = new JFrame();
     private JFrame animationFrame = new JFrame();
@@ -28,14 +37,11 @@ public class App {
     private JPanel controlsPanel = new JPanel();
     private LogsPanel logsPanel = new LogsPanel();
 
-    private World world = new World((msg) -> logsPanel.insert(msg, 0));
-
     private AnimationPanel animationPanel;
 
     private JLabel trafficLimitLabel = new JLabel("Traffic limit:");
 
-    private JComboBox<World.TrafficLimit> trafficLimitComboBox = new JComboBox<World.TrafficLimit>(
-            World.TrafficLimit.values());
+    private JComboBox<TrafficLimit> trafficLimitComboBox = new JComboBox<TrafficLimit>(TrafficLimit.values());
 
     private JLabel trafficVolumeLabel = new JLabel("Traffic volume:");
     private static final int MIN_BUS_SPAWN_DELAY = 0;
@@ -56,6 +62,23 @@ public class App {
     private JLabel activeBusesLabel = new JLabel("Current state:");
     private JTextField activeBusesTextField = new JTextField();
 
+    public enum TrafficLimit {
+        OneBus, ThreeBuses, NoLimit, OneWayThreeBuses;
+
+        private TrafficLimit() {
+        }
+    }
+
+    private boolean running = false;
+    private TrafficLimit trafficLimit = TrafficLimit.ThreeBuses;
+    private int busSpawnDelay = INITIAL_BUS_SPAWN_DELAY;
+    private int direction = 50;
+    private ArrayList<Bus> buses = new ArrayList<Bus>();
+    private ArrayList<String> busesOnBridge = new ArrayList<String>();
+    private boolean bridgeGoingRight = false;
+    private ArrayList<String> busesWaitingRight = new ArrayList<String>();
+    private ArrayList<String> busesWaitingLeft = new ArrayList<String>();
+
     public static void main(String[] args) {
         new App();
     }
@@ -75,19 +98,117 @@ public class App {
 
         mainFrame.setSize(480, 720);
         mainFrame.setTitle("2 buses 1 bridge");
-        mainFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        mainFrame.addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                world.setRunning(false);
-            }
-        });
+        mainFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         mainFrame.setLocationRelativeTo(null);
         mainFrame.setLocation(mainFrame.getX() - mainFrame.getWidth() / 2 - 20, mainFrame.getY());
-        world.setRunning(true);
-        startRefresher();
         createAnimationWindow();
+        setRunning(true);
+        startRefresher();
         mainFrame.setVisible(true);
+        runMainLoop();
+    }
+
+    public void log(String msg) {
+        logsPanel.insert(msg + "\n", 0);
+    }
+
+    private void runMainLoop() {
+        while (isRunning()) {
+            if (buses.size() < MAX_BUSES) {
+                boolean goingRight = ThreadLocalRandom.current().nextInt(0, 101) < direction;
+                (new Thread(new Bus(this, goingRight))).start();
+            }
+
+            try {
+                Thread.sleep(busSpawnDelay);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public synchronized void getOnTheBridge(Bus b) {
+        String busId = Long.toString(b.getId());
+        b.setState(Bus.State.GETTIING_ON_BRIDGE);
+        while (!canEnterBridge(b)) {
+            try {
+                if (b.isGoingRight()) {
+                    if (!busesWaitingLeft.contains(busId))
+                        busesWaitingLeft.add(busId);
+                }
+                else {
+                    if (!busesWaitingRight.contains(busId))
+                        busesWaitingRight.add(busId);
+                }
+
+                log(b + " is waiting on gates");
+                wait();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        if (b.isGoingRight())
+            busesWaitingLeft.remove(busId);
+        else
+            busesWaitingRight.remove(busId);
+
+        busesOnBridge.add(busId);
+        bridgeGoingRight = b.isGoingRight();
+
+        b.setTime(System.currentTimeMillis());
+        b.setState(Bus.State.ON_BRIDGE);
+    }
+
+    private synchronized boolean canEnterBridge(Bus b) {
+        boolean can = false;
+        switch (trafficLimit) {
+            case OneBus: {
+                can = busesOnBridge.size() == 0;
+                break;
+            }
+            case ThreeBuses: {
+                can = busesOnBridge.size() < 3;
+                break;
+            }
+            case NoLimit: {
+                can = true;
+                break;
+            }
+            case OneWayThreeBuses: {
+                if (b.isGoingRight()) {
+                    if (busesWaitingLeft.size() >= busesWaitingRight.size() - 3)
+                        can = (busesOnBridge.size() == 0) || (busesOnBridge.size() < 3 && bridgeGoingRight);
+                }
+                else {
+                    if (busesWaitingLeft.size() - 3 < busesWaitingRight.size())
+                        can = (busesOnBridge.size() == 0) || (busesOnBridge.size() < 3 && !bridgeGoingRight);
+                }
+                break;
+            }
+            default:
+                break;
+        }
+        return can;
+    }
+
+    public synchronized void getOffTheBridge(Bus b) {
+        b.setTime(System.currentTimeMillis());
+        b.setState(Bus.State.GOING_TO_PARKING);
+
+        log(b + " got off the bridge");
+
+        synchronized (busesOnBridge) {
+            busesOnBridge.remove(Long.toString(b.getId()));
+        }
+        notifyAll();
+    }
+
+    public synchronized void addBus(Bus b) {
+        buses.add(b);
+    }
+
+    public synchronized void removeBus(Bus b) {
+        buses.remove(b);
     }
 
     private void constructMenuBar() {
@@ -98,33 +219,31 @@ public class App {
                 "Author: Michał Sieroń\nDate: 2020 December", "About", JOptionPane.INFORMATION_MESSAGE));
 
         JMenuItem exit = new JMenuItem("Exit");
-        exit.addActionListener((e) -> world.setRunning(false));
+        exit.addActionListener((e) -> setRunning(false));
         menu.add(about);
         menu.add(exit);
         menuBar.add(menu);
         mainFrame.setJMenuBar(menuBar);
     }
 
+    private synchronized void updateTextFields() {
+        ArrayList<String> allBusesWaiting = new ArrayList<String>();
+        allBusesWaiting.addAll(busesWaitingLeft);
+        allBusesWaiting.addAll(busesWaitingRight);
+        busesOnGatesTextField.setText(String.join(" ", allBusesWaiting));
+        busesOnBridgeTextField.setText(String.join(" ", busesOnBridge));
+    }
+
     private void startRefresher() {
         (new Thread(() -> {
-            while (world.isRunning()) {
-                long start = System.currentTimeMillis();
-                busesOnBridgeTextField.setText(String.join(" ", world.getIdsOnBridge()));
-                busesOnGatesTextField.setText(String.join(" ", world.getIdsOnGates()));
-                String currentState = world.getCurrentState();
-                activeBusesTextField.setText(currentState);
-                long end = System.currentTimeMillis();
-                long sleepTime = 20 - (end - start);
-                if (sleepTime > 0) {
-                    try {
-                        Thread.sleep(sleepTime);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+            while (isRunning()) {
+                updateTextFields();
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
-            mainFrame.dispose();
-            animationFrame.dispose();
         })).start();
     }
 
@@ -139,9 +258,9 @@ public class App {
         controlsPanel.add(trafficLimitLabel, c);
         c.gridx = 1;
         controlsPanel.add(trafficLimitComboBox, c);
-        trafficLimitComboBox.setSelectedItem(World.TrafficLimit.ThreeBuses);
+        trafficLimitComboBox.setSelectedItem(TrafficLimit.ThreeBuses);
         trafficLimitComboBox.addActionListener((e) -> {
-            world.setTrafficLimit((World.TrafficLimit) trafficLimitComboBox.getSelectedItem());
+            trafficLimit = (TrafficLimit) trafficLimitComboBox.getSelectedItem();
         });
         c.gridy = 1;
         c.gridx = 0;
@@ -154,7 +273,7 @@ public class App {
         trafficVolumeSlider.setLabelTable(volumeSliderLabelTable);
         trafficVolumeSlider.setPaintLabels(true);
         trafficVolumeSlider.addChangeListener((e) -> {
-            world.setBusSpawnDelay(5000 - trafficVolumeSlider.getValue());
+            busSpawnDelay = 5000 - trafficVolumeSlider.getValue();
         });
         c.gridy = 2;
         c.gridx = 0;
@@ -162,7 +281,7 @@ public class App {
         c.gridx = 1;
         controlsPanel.add(trafficDirectionSlider, c);
         trafficDirectionSlider.addChangeListener((e) -> {
-            world.setDirectionRatio(trafficDirectionSlider.getValue());
+            direction = trafficDirectionSlider.getValue();
         });
         Hashtable<Integer, JLabel> directionSliderLabelTable = new Hashtable<Integer, JLabel>();
         directionSliderLabelTable.put(0, new JLabel("West"));
@@ -194,20 +313,33 @@ public class App {
     }
 
     private void createAnimationWindow() {
-        animationPanel = new AnimationPanel(world);
+        animationPanel = new AnimationPanel(this);
         animationFrame.add(animationPanel);
         animationFrame.setSize(480, 720);
         animationFrame.setMinimumSize(new Dimension(480, 720));
         animationFrame.setTitle("2 buses 1 bridge animation");
         animationFrame.setLocationRelativeTo(null);
         animationFrame.setLocation(animationFrame.getX() + animationFrame.getWidth() / 2 + 20, animationFrame.getY());
-        animationFrame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
-        animationFrame.addWindowListener(new WindowAdapter() {
-            @Override
-            public void windowClosing(WindowEvent e) {
-                world.setRunning(false);
-            }
-        });
+        animationFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         animationFrame.setVisible(true);
+    }
+
+    private boolean isRunning() {
+        return running;
+    }
+
+    private boolean setRunning(boolean r) {
+        animationPanel.setRunning(r);
+        return running = r;
+    }
+
+    public synchronized Bus[] getBuses() {
+        Bus[] array = new Bus[buses.size()];
+        buses.toArray(array);
+        return array;
+    }
+
+    public synchronized int getBusesSize() {
+        return buses.size();
     }
 }

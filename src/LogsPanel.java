@@ -2,6 +2,13 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.ScrollPaneConstants;
 
+/*
+ *     Program: NarrowBridgeSimulation
+ *        Plik: LogsPanel.java
+ *       Autor: Michał Sieroń
+ *        Data: 2020 December
+ */
+
 public class LogsPanel extends JScrollPane {
     
     private static final long serialVersionUID = 1L;
